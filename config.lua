@@ -661,7 +661,7 @@ lspconfig.rls = add_lsp {
 }
 
 ---# Ruby - ruby_lsp
---- __Status__: Works (configuration is not complete yet)
+--- __Status__: Works
 --- __Site__: https://github.com/Shopify/ruby-lsp
 --- __Installation__: Use `rvm` to install a version of ruby and then use `gem install ruby-lsp`
 --- __Note__: to ensure ruby-lsp works properly, read the following: https://shopify.github.io/ruby-lsp/editors.html
@@ -687,7 +687,7 @@ lspconfig.ruby_lsp = add_lsp {
       "inlayHint",
       "onTypeFormatting",
       "selectionRanges",
-      -- semanticHighlighting should be used only when running with bundler at the moment
+      -- semanticHighlighting is not currently supported  on Lite XL
       -- "semanticHighlighting"
       },
     -- enableExperimentalFeatures = true,
