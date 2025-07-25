@@ -256,7 +256,7 @@ end
 ---to use for the lsp.request_document_symbols() action.
 ---@param list table<integer, table>
 ---@param parent? string
-local function get_symbol_lists(list, parent)
+function get_symbol_lists(list, parent)
   local symbols = {}
   local symbol_names = {}
   parent = parent or ""
@@ -1840,42 +1840,42 @@ function lsp.request_document_symbols(doc)
   end
 end
 
--- Request the list of symbols of the given document for external plugins to use
-function lsp.request_document_symbols_for_external_use(doc)
-  if not doc.lsp_open then return end
+-- WIP: Request the list of symbols of the given document for external plugins to use
+-- function lsp.request_document_symbols_for_external_use(doc)
+--   if not doc.lsp_open then return end
   
-  local servers_found = false
-  local symbols_retrieved = false
-  for _, name in pairs(lsp.get_active_servers(doc.filename, true)) do
-    servers_found = true
-    local server = lsp.servers_running[name]
-    if server.capabilities.documentSymbolProvider then
-      log(server, "Retrieving document symbols...")
-      server:push_request('textDocument/documentSymbol', {
-        params = {
-          textDocument = {
-            uri = util.touri(core.project_absolute_path(doc.filename)),
-          }
-        },
-        callback = function(server, response)
-          if response.result and response.result and #response.result > 0 then
-            local symbols, symbol_names = get_symbol_lists(response.result)
-            -- FIX
-            return symbols, symbol_names
-          end
-        end
-      })
-      symbols_retrieved = true
-      break
-    end
-  end
+--   local servers_found = false
+--   local symbols_retrieved = false
+--   for _, name in pairs(lsp.get_active_servers(doc.filename, true)) do
+--     servers_found = true
+--     local server = lsp.servers_running[name]
+--     if server.capabilities.documentSymbolProvider then
+--       log(server, "Retrieving document symbols...")
+--       server:push_request('textDocument/documentSymbol', {
+--         params = {
+--           textDocument = {
+--             uri = util.touri(core.project_absolute_path(doc.filename)),
+--           }
+--         },
+--         callback = function(server, response)
+--           if response.result and response.result and #response.result > 0 then
+--             local symbols, symbol_names = get_symbol_lists(response.result)
+--             -- FIX
+--             return symbols, symbol_names
+--           end
+--         end
+--       })
+--       symbols_retrieved = true
+--       break
+--     end
+--   end
 
-  if not servers_found then
-    core.log("[LSP] " .. "No server running")
-  elseif not symbols_retrieved then
-    core.log("[LSP] " .. "Document symbols not supported")
-  end
-end
+--   if not servers_found then
+--     core.log("[LSP] " .. "No server running")
+--   elseif not symbols_retrieved then
+--     core.log("[LSP] " .. "Document symbols not supported")
+--   end
+-- end
 
 --- Format current document if supported by one of the running lsp servers.
 function lsp.request_document_format(doc)
@@ -2480,9 +2480,9 @@ command.add(
   end,
   
   -- WIP: 
-  ["lsp:view-document-symbols-for-external-use"] = function(doc)
-    lsp.request_document_symbols_for_external_use(doc)
-  end,
+  -- ["lsp:view-document-symbols-for-external-use"] = function(doc)
+  --   lsp.request_document_symbols_for_external_use(doc)
+  -- end,
 
   ["lsp:format-document"] = function(doc)
     lsp.request_document_format(doc)
