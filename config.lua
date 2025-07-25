@@ -670,7 +670,7 @@ lspconfig.ruby_lsp = add_lsp {
   language = "ruby",
   file_patterns = { "%.rb$" },
   command = { 'ruby-lsp' },
-  -- Use command below if you want to run ruby_lsp with bundler
+  -- Use the command below if you want to run ruby_lsp with bundler
   -- command = { 'bundler', 'exec', 'ruby-lsp'},
   incremental_changes = true,
   init_options = {
