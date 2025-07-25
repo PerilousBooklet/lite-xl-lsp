@@ -687,7 +687,7 @@ lspconfig.ruby_lsp = add_lsp {
       "inlayHint",
       "onTypeFormatting",
       "selectionRanges",
-      -- semanticHighlighting is not currently supported  on Lite XL
+      -- semanticHighlighting is not currently supported by Lite XL
       -- "semanticHighlighting"
       },
     -- enableExperimentalFeatures = true,
