@@ -685,7 +685,31 @@ lspconfig.pyright = add_lsp {
   name = "pyright",
   language = "python",
   file_patterns = { "%.py$" },
-  command = { "pyright-langserver",  "--stdio" },
+  command = { "pyright-langserver", "--stdio" },
+  verbose = false
+}
+
+--# basedpyright
+--- __Status__: Works
+--- __Site__: https://github.com/DetachHead/basedpyright
+--- __Installation__: `pip install basedpyright`  or `npm install -g basedpyright`
+lspconfig.basedpyright = add_lsp {
+  name = "basedpyright",
+  language = "python",
+  file_patterns = { "%.py$" },
+  command = { "basedpyright-langserver", "--stdio" },
+  verbose = false
+}
+
+--# ruff
+--- __Status__: Works
+--- __Site__: https://github.com/astral-sh/ruff
+--- __Installation__: `pip install ruff` or `uv tool install ruff`
+lspconfig.ruff = add_lsp {
+  name = "ruff",
+  language = "python",
+  file_patterns = { "%.py$" },
+  command = { "ruff", "server" },
   verbose = false
 }
 
@@ -702,23 +726,23 @@ lspconfig.r_ls = add_lsp {
 }
 
 ---# Ruby - ruby_lsp
---- __Status__: Untested
+--- __Status__: Works
 --- __Site__: https://github.com/Shopify/ruby-lsp
---- __Installation__: https://github.com/Shopify/ruby-lsp?tab=readme-ov-file#getting-started
+--- __Installation__: Use `rvm` to install a version of ruby and then use `gem install ruby-lsp`
+--- __Note__: to ensure ruby-lsp works properly, read the following: https://shopify.github.io/ruby-lsp/editors.html
 lspconfig.ruby_lsp = add_lsp {
   name = "ruby_lsp",
   language = "ruby",
   file_patterns = { "%.rb$" },
-  command = { "ruby-lsp" },
-  -- Override command to one below if You want to use it with bundler
-  -- command = { "bundle", "exec", "ruby-lsp"},
+  command = { 'ruby-lsp' },
+  -- Use the command below if you want to run ruby_lsp with bundler
+  -- command = { 'bundler', 'exec', 'ruby-lsp'},
   incremental_changes = true,
   init_options = {
     enabledFeatures = {
       "codeActions",
+      "completion",
       "diagnostics",
-      -- semanticHighlighting should be use only when running with bundle at the moment
-      --"semanticHighlighting",
       "documentHighlights",
       "documentLink",
       "documentSymbols",
@@ -728,7 +752,8 @@ lspconfig.ruby_lsp = add_lsp {
       "inlayHint",
       "onTypeFormatting",
       "selectionRanges",
-      "completion"
+      -- semanticHighlighting is not currently supported by Lite XL
+      -- "semanticHighlighting"
       },
     -- enableExperimentalFeatures = true,
     -- rubyVersionManager = "",
