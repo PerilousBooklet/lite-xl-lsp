@@ -25,6 +25,7 @@ local Doc = require "core.doc"
 local DocView = require "core.docview"
 local StatusView = require "core.statusview"
 local RootView = require "core.rootview"
+local View = require "core.view"
 local LineWrapping
 -- If the lsp plugin is loaded from users init.lua it will load linewrapping
 -- even if it was disabled from the settings ui, so we queue this check since
@@ -92,6 +93,7 @@ config.plugins.lsp = common.merge({
   force_verbosity_off = false,
   more_yielding = false,
   autostart_server = true,
+  outline_width = 300 * SCALE,
   -- The config specification used by the settings gui
   config_spec = {
     name = "Language Server Protocol",
@@ -140,6 +142,15 @@ config.plugins.lsp = common.merge({
       path = "autostart_server",
       type = "TOGGLE",
       default = true
+    },
+    {
+      label = "Outline Width",
+      description = "Set the width of the symbols treeview.",
+      path = "outline_width",
+      type = "NUMBER",
+      default = 300,
+      min = 200,
+      max = 400
     },
     {
       label = "Stop Servers",
@@ -1844,6 +1855,88 @@ function lsp.request_document_symbols(doc)
   end
 end
 
+-- WIP: Show the list of symbols with a tree View (the outline)
+-- FIX: move the custom View definition code somewhere more appropriate
+--      (because it's crashing the editor)
+local OutlineView = View:extend()
+local icon_small_font = style.icon_font:copy(12 * SCALE)
+function OutlineView:new()
+  OutlineView.super.new(self)
+  self.scrollable = true
+  self.focusable = false
+  self.visible = false
+  self.times_cache = {}
+  self.cache = {}
+  self.cache_updated = false
+  self.init_size = true
+  self.focus_index = 0
+  self.previously_focused_symbol = nil
+  -- Items are generated from cache according to the mode
+  self.items = {}
+end
+-- function OutlineView:refresh_cache()
+-- function OutlineView:get_cached()
+function OutlineView:set_target_size(axis, value)
+  if axis == "x" then
+    config.plugins.lsp.treeview_width = value
+    return true
+  end
+end
+function OutlineView:get_item_height()
+  return style.font:get_height() + style.padding.y
+end
+function OutlineView:get_scrollable_size()
+	-- the "actual" height of the View
+	-- TODO: should depend on length of symbols list
+  return 2 * self.size.y
+end
+-- function OutlineView:get_h_scrollable_size()
+-- 	-- the "actual" width of the View
+--   return 2 * self.size.x
+-- end
+-- function OutlineView:get_cached_time()
+-- function OutlineView:check_cache()
+-- function OutlineView:each_item()
+-- function OutlineView:on_mouse_moved()
+-- function OutlineView:goto_hovered_item()
+-- function OutlineView:on_mouse_pressed()
+-- NOTE: set_target_size() and update() work together to allow width resizing of the View
+function OutlineView:update()
+  -- ?
+  -- NOTE: without this the code for scrollable logic doesn't work
+  OutlineView.super.update(self)
+  -- Update width
+  local dest = self.visible and config.plugins.lsp.treeview_width or 0
+  if self.init_size then
+    self.size.x = dest
+    self.init_size = false
+  else
+    self:move_towards(self.size, "x", dest)
+  end
+  -- TODO: automatic width resize based on longest symbol item in shown treeview
+end
+function OutlineView:draw()
+  self:draw_background(style.background) -- avoid overdrawing previous content
+  self:draw_scrollbar()
+  local x, y = self:get_content_offset()
+  local w, h = self.size.x, self.size.y
+  local yy = y - 380
+  for i = 1, 40, 1 do
+    common.draw_text(style.font, style.text, "Here's some text", "left", x + 15, yy - 15, w, h)
+    yy = yy + 35
+  end
+end
+-- function OutlineView:get_item_by_index()
+-- function OutlineView:get_hovered_panel()
+-- function OutlineView:update_scroll_position()
+local view = OutlineView()
+local node = core.root_view:get_active_node()
+view.size.x = config.plugins.lsp.treeview_width
+node:split("right", view, {x=true}, true)
+function lsp.show_document_symbols_outline(doc)
+  -- ...
+end
+
 --- Format current document if supported by one of the running lsp servers.
 function lsp.request_document_format(doc)
   if not doc.lsp_open then return end
@@ -2446,6 +2539,10 @@ command.add(
     lsp.request_document_symbols(doc)
   end,
 
+  ["lsp:show-outline"] = function(doc)
+    lsp.show_document_symbols_outline(doc)
+  end,
+
   ["lsp:format-document"] = function(doc)
     lsp.request_document_format(doc)
   end,
@@ -2535,6 +2632,7 @@ keymap.add {
   ["alt+shift+e"]       = "lsp:toggle-diagnostics",
   ["alt+c"]             = "lsp:view-call-hierarchy",
   ["alt+r"]             = "lsp:rename-symbol",
+  ["alt+shift+o"]       = "lsp:show_document_symbols_outline"
 }
 
 --
