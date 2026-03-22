@@ -1791,6 +1791,7 @@ function lsp.request_workspace_symbol(doc, symbol)
   end
 end
 
+-- WIP: refactor and split
 --- Request a list of symbols for the given document for easy document
 -- navigation and displays them using core.command_view:enter()
 function lsp.request_document_symbols(doc)
@@ -1855,87 +1856,334 @@ function lsp.request_document_symbols(doc)
   end
 end
 
--- WIP: Show the list of symbols with a tree View (the outline)
--- FIX: move the custom View definition code somewhere more appropriate
---      (because it's crashing the editor)
+
+-- WIP: OUTLINE
+
+---@class lsp.outlineview : core.view
 local OutlineView = View:extend()
-local icon_small_font = style.icon_font:copy(12 * SCALE)
+
 function OutlineView:new()
   OutlineView.super.new(self)
   self.scrollable = true
   self.focusable = false
   self.visible = false
-  self.times_cache = {}
-  self.cache = {}
-  self.cache_updated = false
   self.init_size = true
-  self.focus_index = 0
-  self.previously_focused_symbol = nil
-  -- Items are generated from cache according to the mode
+  
+  -- Store the current document and its symbols
+  self.current_doc = nil
   self.items = {}
+  self.hovered_item = nil
+  self.loading = false
 end
--- function OutlineView:refresh_cache()
--- function OutlineView:get_cached()
-function OutlineView:set_target_size(axis, value)
-  if axis == "x" then
-    config.plugins.lsp.treeview_width = value
-    return true
-  end
-end
+
 function OutlineView:get_item_height()
   return style.font:get_height() + style.padding.y
 end
-function OutlineView:get_scrollable_size()
-	-- the "actual" height of the View
-	-- TODO: should depend on length of symbols list
-  return 2 * self.size.y
+
+function OutlineView:set_target_size(axis, value)
+  if axis == "x" then
+    config.plugins.lsp.outline_width = value
+    return true
+  end
 end
--- function OutlineView:get_h_scrollable_size()
--- 	-- the "actual" width of the View
---   return 2 * self.size.x
--- end
--- function OutlineView:get_cached_time()
--- function OutlineView:check_cache()
--- function OutlineView:each_item()
--- function OutlineView:on_mouse_moved()
--- function OutlineView:goto_hovered_item()
--- function OutlineView:on_mouse_pressed()
--- NOTE: set_target_size() and update() work together to allow width resizing of the View
+
+---Convert LSP DocumentSymbol response to outline tree structure
+---@param symbols table The LSP symbols array
+---@param depth? integer Current depth level (default 0)
+---@return table Converted items
+function OutlineView:convert_symbols_to_items(symbols, depth)
+  depth = depth or 0
+  local items = {}
+  
+  for _, symbol in ipairs(symbols) do
+    local item = {
+      type = (symbol.children and #symbol.children > 0) and "group" or "item",
+      name = symbol.name,
+      kind = symbol.kind,
+      expanded = depth < 2, -- Auto-expand first 2 levels
+      line = nil,
+      range = nil
+    }
+    
+    -- Handle both DocumentSymbol and SymbolInformation formats
+    if symbol.range then
+      item.range = symbol.range
+      local line1, col1 = util.toselection(symbol.range)
+      item.line = line1
+    elseif symbol.location and symbol.location.range then
+      item.range = symbol.location.range
+      local line1, col1 = util.toselection(symbol.location.range)
+      item.line = line1
+    end
+    
+    -- Recursively convert children
+    if symbol.children and #symbol.children > 0 then
+      item.children = self:convert_symbols_to_items(symbol.children, depth + 1)
+    end
+    
+    table.insert(items, item)
+  end
+  
+  return items
+end
+
+---Request symbols for the current document
+function OutlineView:refresh_symbols()
+  local dv = get_active_docview()
+  if not dv or not dv.doc or not dv.doc.lsp_open then
+    self.items = {}
+    self.current_doc = nil
+    return
+  end
+  
+  local doc = dv.doc
+  
+  -- Don't refresh if same document and not loading
+  if self.current_doc == doc and not self.loading then
+    return
+  end
+  
+  self.current_doc = doc
+  self.loading = true
+  
+  -- Request symbols from LSP
+  -- FIX: duplicate refresh_symbols(), use get_symbol_lists()
+  local servers_found = false
+  for _, name in pairs(lsp.get_active_servers(doc.filename, true)) do
+    servers_found = true
+    local server = lsp.servers_running[name]
+    if server.capabilities.documentSymbolProvider then
+      server:push_request('textDocument/documentSymbol', {
+        params = {
+          textDocument = {
+            uri = util.touri(core.project_absolute_path(doc.filename)),
+          }
+        },
+        callback = function(server, response)
+          self.loading = false
+          if response.result and #response.result > 0 then
+            self.items = self:convert_symbols_to_items(response.result)
+            core.redraw = true
+          else
+            self.items = {}
+          end
+        end
+      })
+      break
+    end
+  end
+  
+  if not servers_found then
+    self.loading = false
+    self.items = {}
+  end
+end
+
+---Recursive iterator for tree items
+function OutlineView:each_item()
+  return coroutine.wrap(function()
+    local ox, oy = self:get_content_offset()
+    local y = oy + style.padding.y
+    local w = self.size.x
+    local h = self:get_item_height()
+    
+    local function yield_items_recursive(items, depth, y)
+      for _, item in ipairs(items) do
+        coroutine.yield(item, ox, y, w, h, depth)
+        y = y + h
+        
+        if item.children and item.expanded then
+          y = yield_items_recursive(item.children, depth + 1, y)
+        end
+      end
+      return y
+    end
+    
+    yield_items_recursive(self.items, 0, y)
+  end)
+end
+
+function OutlineView:on_mouse_moved(px, py)
+  self.hovered_item = nil
+  
+  for item, x, y, w, h, depth in self:each_item() do
+    if px > x and py > y and px <= x + w and py <= y + h then
+      self.hovered_item = item
+      break
+    end
+  end
+end
+
+function OutlineView:on_mouse_pressed(button, x, y)
+  if not self.hovered_item then return end
+  
+  if self.hovered_item.type == "group" then
+    self.hovered_item.expanded = not self.hovered_item.expanded
+    core.redraw = true
+  else
+    -- Jump to symbol location
+    local dv = get_active_docview()
+    if dv and dv.doc and self.hovered_item.line then
+      dv.doc:set_selection(self.hovered_item.line, 1, self.hovered_item.line, 1)
+      dv:scroll_to_line(self.hovered_item.line, true)
+    end
+  end
+end
+
 function OutlineView:update()
-  -- ?
-  -- NOTE: without this the code for scrollable logic doesn't work
   OutlineView.super.update(self)
-  -- Update width
-  local dest = self.visible and config.plugins.lsp.treeview_width or 0
+  
+  -- Auto-refresh when switching documents
+  if self.visible then
+    self:refresh_symbols()
+  end
+  
+  local dest = self.visible and config.plugins.lsp.outline_width or 0
   if self.init_size then
     self.size.x = dest
     self.init_size = false
   else
     self:move_towards(self.size, "x", dest)
   end
-  -- TODO: automatic width resize based on longest symbol item in shown treeview
 end
+
 function OutlineView:draw()
-  self:draw_background(style.background) -- avoid overdrawing previous content
-  self:draw_scrollbar()
-  local x, y = self:get_content_offset()
-  local w, h = self.size.x, self.size.y
-  local yy = y - 380
-  for i = 1, 40, 1 do
-    common.draw_text(style.font, style.text, "Here's some text", "left", x + 15, yy - 15, w, h)
-    yy = yy + 35
+  self:draw_background(style.background2)
+  
+  if self.loading then
+    local text = "Loading symbols..."
+    local x = self.position.x + style.padding.x
+    local y = self.position.y + style.padding.y
+    common.draw_text(style.font, style.text, text, "left", x, y, self.size.x, self:get_item_height())
+    return
   end
+  
+  if #self.items == 0 then
+    local text = "No symbols available"
+    local x = self.position.x + style.padding.x
+    local y = self.position.y + style.padding.y
+    common.draw_text(style.font, style.dim, text, "left", x, y, self.size.x, self:get_item_height())
+    return
+  end
+  
+  local icon_width = style.icon_font:get_width("D")
+  local spacing = style.font:get_width(" ") * 2
+  local indent_per_level = style.padding.x * 1.5
+  
+  for item, x, y, w, h, depth in self:each_item() do
+    local text_color = style.text
+    
+    if item == self.hovered_item then
+      renderer.draw_rect(x, y, w, h, style.line_highlight)
+      text_color = style.accent
+    end
+    
+    x = x + style.padding.x + (depth * indent_per_level)
+    
+    -- Draw icon
+    if item.type == "group" then
+      local icon = item.expanded and "▼" or "▶"
+      common.draw_text(style.icon_font, text_color, icon, nil, x, y, 0, h)
+      x = x + icon_width + spacing
+    else
+      local kind_icon = "•"
+      -- You can customize icons based on symbol kind here
+      if item.kind then
+        local kind_str = Server.get_symbol_kind(item.kind)
+        if kind_str:match("Function") or kind_str:match("Method") then
+          kind_icon = "ƒ"
+        elseif kind_str:match("Class") then
+          kind_icon = "C"
+        elseif kind_str:match("Variable") then
+          kind_icon = "v"
+        end
+      end
+      common.draw_text(style.icon_font, text_color, kind_icon, nil, x, y, 0, h)
+      x = x + icon_width + spacing
+    end
+    
+    -- Draw text
+    common.draw_text(style.font, text_color, item.name, nil, x, y, 0, h)
+  end
+  
+  self:draw_scrollbar()
 end
--- function OutlineView:get_item_by_index()
--- function OutlineView:get_hovered_panel()
--- function OutlineView:update_scroll_position()
-local view = OutlineView()
-local node = core.root_view:get_active_node()
-view.size.x = config.plugins.lsp.treeview_width
-node:split("right", view, {x=true}, true)
-function lsp.show_document_symbols_outline(doc)
-  -- ...
+
+function OutlineView:get_scrollable_size()
+  local count = 0
+  for item in self:each_item() do
+    count = count + 1
+  end
+  return count * self:get_item_height() + style.padding.y * 2
 end
+
+-- Utility functions
+function OutlineView:expand_all()
+  local function expand_recursive(items)
+    for _, item in ipairs(items) do
+      if item.type == "group" then
+        item.expanded = true
+        if item.children then
+          expand_recursive(item.children)
+        end
+      end
+    end
+  end
+  expand_recursive(self.items)
+  core.redraw = true
+end
+
+function OutlineView:collapse_all()
+  local function collapse_recursive(items)
+    for _, item in ipairs(items) do
+      if item.type == "group" then
+        item.expanded = false
+        if item.children then
+          collapse_recursive(item.children)
+        end
+      end
+    end
+  end
+  collapse_recursive(self.items)
+  core.redraw = true
+end
+
+-- Create and initialize the outline view
+local outline_view = OutlineView()
+local outline_node = core.root_view:get_active_node()
+outline_view.size.x = config.plugins.lsp.outline_width
+outline_node:split("right", outline_view, {x=true}, true)
+
+-- Add commands
+command.add(nil, {
+  ["lsp:toggle-outline"] = function()
+    outline_view.visible = not outline_view.visible
+    if outline_view.visible then
+      outline_view:refresh_symbols()
+    end
+  end,
+  
+  ["lsp:refresh-outline"] = function()
+    outline_view:refresh_symbols()
+  end,
+  
+  ["lsp:outline-expand-all"] = function()
+    outline_view:expand_all()
+  end,
+  
+  ["lsp:outline-collapse-all"] = function()
+    outline_view:collapse_all()
+  end,
+})
+
+-- Add keybinding
+keymap.add({
+  ["alt+shift+o"] = "lsp:toggle-outline",
+})
+
+-- Make outline view accessible from lsp module
+lsp.outline_view = outline_view
+
 
 --- Format current document if supported by one of the running lsp servers.
 function lsp.request_document_format(doc)
@@ -2699,4 +2947,3 @@ end
 
 
 return lsp
-
