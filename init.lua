@@ -2162,24 +2162,13 @@ command.add(nil, {
       outline_view:refresh_symbols()
     end
   end,
-  
-  ["lsp:refresh-outline"] = function()
-    outline_view:refresh_symbols()
-  end,
-  
-  ["lsp:outline-expand-all"] = function()
-    outline_view:expand_all()
-  end,
-  
-  ["lsp:outline-collapse-all"] = function()
-    outline_view:collapse_all()
-  end,
+  ["lsp:refresh-outline"] = function() outline_view:refresh_symbols() end,
+  ["lsp:outline-expand-all"] = function() outline_view:expand_all() end,
+  ["lsp:outline-collapse-all"] = function() outline_view:collapse_all() end,
 })
 
 -- Add keybinding
-keymap.add({
-  ["alt+shift+o"] = "lsp:toggle-outline",
-})
+keymap.add({ ["alt+shift+o"] = "lsp:toggle-outline" })
 
 -- Make outline view accessible from lsp module
 lsp.outline_view = outline_view
